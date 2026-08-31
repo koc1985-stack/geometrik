@@ -37,13 +37,6 @@ targets:
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         ITSAppUsesNonExemptEncryption: false
-    entitlements:
-      path: Geometrik.entitlements
-      properties:
-        com.apple.developer.icloud-container-identifiers:
-          - iCloud.com.geometrikapp.app
-        com.apple.developer.icloud-services:
-          - CloudKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.geometrikapp.app

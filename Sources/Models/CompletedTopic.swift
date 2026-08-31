@@ -1,14 +1,12 @@
 import Foundation
 import SwiftData
 
-/// Bir kullanıcının tamamladığı konu - SwiftData ile yerel depolanır, CloudKit `.automatic`
-/// sayesinde aynı Apple hesabındaki diğer cihazlarla otomatik senkronize olur. Ayrı bir
-/// backend/hesap sistemi yok; kimlik tamamen kullanıcının iCloud hesabına bağlı.
+/// Bir kullanıcının tamamladığı konu - SwiftData ile sadece cihazda yerel depolanır (v1'de
+/// CloudKit senkronu yok). Ayrı bir backend/hesap sistemi de yok.
 @Model
 final class CompletedTopic {
     /// `Topic.id` ile eşleşir (örn. "lgs.ucgen-temel"). NOT: `@Attribute(.unique)` KASITLI
-    /// OLARAK kullanılmıyor - CloudKit senkronizasyonu unique constraint'leri desteklemiyor
-    /// (ModelContainer oluşturulurken çökmeye yol açar). Bir konu birden fazla kez tamamlanırsa
+    /// OLARAK kullanılmıyor. Bir konu birden fazla kez tamamlanırsa
     /// (kullanıcı dersi tekrar çözerse) birden fazla kayıt oluşabilir - bu kasıtlı, bir tür
     /// tamamlama geçmişi olarak düşünülebilir; `completedIds` gibi sorgular zaten `Set` ile
     /// tekilleştiriyor.
