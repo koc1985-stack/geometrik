@@ -87,8 +87,4 @@ final class GeometryStepPlayer {
             currentIndex = lesson.steps.isEmpty ? -1 : 0
         }
     }
-
-    deinit {
-        playbackTask?.cancel()
-    }
 }

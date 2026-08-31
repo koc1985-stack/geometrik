@@ -1,3 +1,4 @@
+import Foundation
 import Observation
 import RevenueCat
 
@@ -37,6 +38,14 @@ final class PurchaseManager: NSObject {
     func restorePurchases() async throws {
         let customerInfo = try await Purchases.shared.restorePurchases()
         updateSubscriptionStatus(from: customerInfo)
+    }
+
+    /// `restorePurchases()`'ın Ayarlar ekranındaki geri yükleme butonu için kullanılan hali -
+    /// hata olup olmadığını değil, geri yükleme sonrası aktif bir abonelik bulunup bulunmadığını döner.
+    @discardableResult
+    func restore() async -> Bool {
+        try? await restorePurchases()
+        return isSubscribed
     }
 
     func refreshSubscriptionStatus() async {
