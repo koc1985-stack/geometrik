@@ -32,15 +32,6 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Set up App Store Connect API key
-        env:
-          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-        run: |
-          set -e
-          mkdir -p "$HOME/private_keys"
-          printf '%s' "$ASC_API_KEY_P8" > "$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8"
-
       - name: Set up temporary keychain
         run: |
           security create-keychain -p "" build.keychain
@@ -49,9 +40,6 @@ jobs:
           security unlock-keychain -p "" build.keychain
           security set-keychain-settings -lut 21600 build.keychain
 
-      # Bkz. Impulse_Buy_Gatekeeper/README.md "Mac'siz test" bölümü - xcodebuild'in otomatik
-      # imzalaması yeni sertifika oluşturabilir ama var olanı hiç iptal etmez, bu yüzden her
-      # runner'a önceden üretilmiş TEK bir Distribution sertifikasını import ediyoruz.
       - name: Import signing certificate
         env:
           CERT_DIST_P12_BASE64: ${{ secrets.CERT_DIST_P12_BASE64 }}
@@ -64,60 +52,77 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
           rm -f dist.p12
 
-      - name: Archive (automatic signing)
+      - name: Install provisioning profile
         env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
         run: |
-          xcodebuild \
+          set -e
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          printf '%s' "$PROFILE_BASE64" | tr -d '[:space:]' | base64 --decode > ~/Library/MobileDevice/Provisioning\ Profiles/Geometrik_App_Store.mobileprovision
+
+      # Manuel imzalama (project.yml#Release config) - API key'e/otomatik provizyona hiç gerek
+      # yok, sertifika+profile zaten yerelde kurulu. Bkz. project.yml'deki not: bunun
+      # "-authenticationKeyPath" ile otomatik imzalamadan daha güvenilir olduğu bu projede
+      # denenip doğrulandı.
+      - name: Archive (Release, manuel imzalama)
+        run: |
+          xcodebuild archive \
             -project Geometrik.xcodeproj \
             -scheme Geometrik \
             -configuration Release \
-            -destination 'generic/platform=iOS' \
             -archivePath build/Geometrik.xcarchive \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8" \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
-            archive
+            -destination 'generic/platform=iOS' \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }}
 
-      - name: Export & upload to TestFlight
-        env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      - name: Export .ipa
         run: |
-          set -e
-          cat > ExportOptions.plist << 'EOF'
+          cat > ExportOptions.plist << 'PLIST_EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
-              <key>method</key>
-              <string>app-store-connect</string>
-              <key>destination</key>
-              <string>upload</string>
-              <key>teamID</key>
-              <string>R6W7XU4TM7</string>
-              <key>signingStyle</key>
-              <string>automatic</string>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>teamID</key>
+            <string>R6W7XU4TM7</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>com.geometrikapp.app</key>
+              <string>Geometrik App Store</string>
+            </dict>
           </dict>
           </plist>
-          EOF
-
+          PLIST_EOF
           xcodebuild -exportArchive \
             -archivePath build/Geometrik.xcarchive \
             -exportPath build/export \
-            -exportOptionsPlist ExportOptions.plist \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8" \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+            -exportOptionsPlist ExportOptions.plist
 
-      - name: Upload export log (for debugging)
+      # App Store Connect API key sadece burada, yükleme için kullanılıyor - kullanıcı adı/
+      # şifre/2FA gerekmez.
+      - name: Upload to App Store Connect
+        env:
+          API_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+        run: |
+          set -e
+          mkdir -p ~/private_keys
+          printf '%s' "$API_KEY_P8" > ~/private_keys/AuthKey_${API_KEY_ID}.p8
+          IPA_PATH=$(find build/export -maxdepth 1 -name "*.ipa" | head -1)
+          echo "Yüklenecek IPA: $IPA_PATH"
+          xcrun altool --upload-app \
+            -f "$IPA_PATH" \
+            -t ios \
+            --apiKey "$API_KEY_ID" \
+            --apiIssuer "$API_ISSUER_ID"
+
+      - name: Upload build artifact (yedek/inceleme için)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: export-logs
-          path: build/export
-          retention-days: 7
+          name: Geometrik-release-ipa
+          path: build/export/*.ipa
+          retention-days: 14
